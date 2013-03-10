@@ -1,21 +1,21 @@
-#define buttonPlay 40
-#define buttonNext 41
-#define DacRegister DDRA
-#define DacPort PORTA
-#define SDPath "/AUDIO/"
+/*
+	AudioPlayer - An arduino portable audio player
+	==============================================
+	Created by Daniel Esteban, March 10, 2013.
 
+	Edit Setup.h for Port/Pin Numbers & other configurations...
+*/
+
+/*
+//Uncomment this ones to compile with the Arduino IDE
 #include <SD.h>
 #include <Buttons.h>
 #include <Directory.h>
-
-#define sampleRate 44100
-#define audioInterrupt TIMER2_COMPA_vect
-
-Buttons buttons(onPush);
+*/
+#include "Setup.h"
 
 bool playing = 0;
 
-Directory * dir;
 file * currentFile;
 long fileSize;
 File audio;
@@ -26,6 +26,23 @@ byte currentBuffer;
 int currentBufferIndex;
 uint8_t buffers[NumBuffers][BufferSize];
 bool bufferStatus[NumBuffers];
+
+void next();
+
+void loop() {
+	//BUFFERING
+	for(byte x=0; x<NumBuffers; x++) {
+		if(fileSize == 0) next();
+		if(bufferStatus[x]) continue;
+		unsigned int buffSize = fileSize > BufferSize ? BufferSize : fileSize;
+		audio.read(buffers[x], BufferSize);
+		fileSize -= buffSize;
+		bufferStatus[x] = 1;
+		break;
+	}
+
+	buttons.read();
+}
 
 void loadFile(file * f) {
 	String filename = SDPath;
@@ -42,45 +59,18 @@ void loadFile(file * f) {
 	currentBuffer = currentBufferIndex = 0;
 }
 
-void setup() {
-	buttons.setup(buttonPlay);
-	buttons.setup(buttonNext);
-
-	DacRegister = 0xFF;
-	//Serial.begin(115200);
-
-	SD.begin();
-	dir = new Directory(SDPath);
-	loadFile(dir->getFiles());
-
-	cli(); //stop interrupts
-
-	TCCR2A = 0;
-	TCCR2B = 0;
-	TCCR2A |= (1 << WGM21); //turn on CTC mode
-	TCCR2B |= (1 << CS21); //Set CS11 bit for 8 prescaler
-	OCR2A = (F_CPU / ((long) sampleRate * 8)) - 1; //set compare match register for 16khz increments
-	TIMSK2 |= (1 << OCIE2A); //enable timer compare interrupt
-
-	sei(); //allow interrupts
+void prev() {
+	file * f = dir->getFiles();
+	while(1) {
+		if(f->next == currentFile || f->next == NULL) {
+			loadFile(f);
+			break;
+		}
+	}
 }
 
 void next() {
 	loadFile(currentFile->next != NULL ? currentFile->next : dir->getFiles());
-}
-
-void loop() {
-	for(byte x=0; x<NumBuffers; x++) {
-		if(fileSize == 0) next();
-		if(bufferStatus[x]) continue;
-		unsigned int buffSize = fileSize > BufferSize ? BufferSize : fileSize;
-		audio.read(buffers[x], BufferSize);
-		fileSize -= buffSize;
-		bufferStatus[x] = 1;
-		break;
-	}
-
-	buttons.read();
 }
 
 void onPush(byte pin) {
@@ -88,12 +78,16 @@ void onPush(byte pin) {
 		case buttonPlay:
 			playing = !playing;
 		break;
+		case buttonPrev:
+			prev();
+		break;
 		case buttonNext:
 			next();
 	}
 }
 
 ISR(audioInterrupt) {
+	//PLAYBACK
 	if(!playing || !bufferStatus[currentBuffer]) return;
 	DacPort = buffers[currentBuffer][currentBufferIndex];
 	currentBufferIndex++;
