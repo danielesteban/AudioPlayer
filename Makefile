@@ -11,6 +11,6 @@ ISP_PORT = $(ARDUINO_PORT)
 AVRDUDE_ARD_BAUDRATE = $(MONITOR_BAUDRATE)
 AVRDUDE_CONF = $(AVR_TOOLS_DIR)/etc/avrdude.conf -b $(AVRDUDE_ARD_BAUDRATE)
 
-ARDUINO_LIBS = SD SD/utility Buttons SoftwareSerial
+ARDUINO_LIBS = EEPROM SD SD/utility Buttons
 
 include ./libraries/Makefile/arduino-mk/Arduino.mk

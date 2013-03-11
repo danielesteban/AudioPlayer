@@ -11,6 +11,7 @@
 #else
 #include <WProgram.h>
 #endif
+#include <EEPROM.h>
 #include <SD.h>
 #include <Buttons.h>
 
@@ -40,7 +41,7 @@ Buttons buttons(onPush);
 File dir;
 #define audioInterrupt TIMER2_COMPA_vect
 
-void loadFile(File f);
+void loadFile(File f, int index);
 
 //Setup function
 void setup() {
@@ -52,7 +53,23 @@ void setup() {
 	//SDCARD
 	SD.begin();
 	dir = SD.open(SDPath);
-	loadFile(dir.openNextFile());
+
+	int lastIndex = (int) EEPROM.read(0) + ((int) EEPROM.read(1) << 8);
+    lastIndex == 32767 && (lastIndex = 0);
+
+	int c = 0;
+	File f;
+	while(f = dir.openNextFile()) {
+		if(c == lastIndex) break;
+		f.close();
+		c++;
+	}
+	if(!f) { //sd content has change or the eeprom data was bad...
+		dir.rewindDirectory();
+		f = dir.openNextFile();
+		c = 0;
+	}
+	loadFile(f, c);
 
 	//DAC
 	DacRegister = 0xFF;
