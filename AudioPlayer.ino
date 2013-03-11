@@ -10,18 +10,22 @@
 //Uncomment this ones to compile with the Arduino IDE
 #include <SD.h>
 #include <Buttons.h>
-#include <Directory.h>
 */
 #include "Setup.h"
 
 bool playing = 0;
 
-file * currentFile;
+File currentFile;
+int currentIndex = 0;
 long fileSize;
-File audio;
 
+#if defined(__AVR_ATmega2560__)
 #define NumBuffers 4
 #define BufferSize 1024
+#else if defined(__AVR_ATmega328__)
+#define NumBuffers 2
+#define BufferSize 256
+#endif
 byte currentBuffer;
 int currentBufferIndex;
 uint8_t buffers[NumBuffers][BufferSize];
@@ -35,7 +39,7 @@ void loop() {
 		if(fileSize == 0) next();
 		if(bufferStatus[x]) continue;
 		unsigned int buffSize = fileSize > BufferSize ? BufferSize : fileSize;
-		audio.read(buffers[x], BufferSize);
+		currentFile.read(buffers[x], BufferSize);
 		fileSize -= buffSize;
 		bufferStatus[x] = 1;
 		break;
@@ -44,14 +48,9 @@ void loop() {
 	buttons.read();
 }
 
-void loadFile(file * f) {
-	String filename = SDPath;
-	filename += f->name;
-	char p[filename.length() + 1];
-    filename.toCharArray(p, filename.length() + 1);
-	audio = SD.open(p);
+void loadFile(File f) {
 	currentFile = f;
-	fileSize = f->size;
+	fileSize = f.size();
 	for(byte x=0; x<NumBuffers; x++) {
 		bufferStatus[x] = 0;
 		for(int y=0; y<BufferSize; y++) buffers[x][y] = 127;
@@ -60,17 +59,31 @@ void loadFile(file * f) {
 }
 
 void prev() {
-	file * f = dir->getFiles();
-	while(1) {
-		if(f->next == currentFile || f->next == NULL) {
-			loadFile(f);
-			break;
-		}
+	int c = 0;
+	File f,
+		prev = currentFile;
+
+	dir.rewindDirectory();
+	while(f = dir.openNextFile()) {
+		prev.close();
+		prev = f;
+		c++;
+		if(c == currentIndex) break;
 	}
+	currentIndex = c - 1;
+	loadFile(prev);
 }
 
 void next() {
-	loadFile(currentFile->next != NULL ? currentFile->next : dir->getFiles());
+	if(currentFile) currentFile.close();
+	File next = dir.openNextFile();
+	currentIndex++;
+	if(!next) {
+		dir.rewindDirectory();
+		next = dir.openNextFile();
+		currentIndex = 0;
+	}
+	loadFile(next);
 }
 
 void onPush(byte pin) {

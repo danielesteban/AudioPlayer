@@ -13,14 +13,21 @@
 #endif
 #include <SD.h>
 #include <Buttons.h>
-#include <Directory.h>
 
 //Pin Declarations & Audio path
+#if defined(__AVR_ATmega2560__)
 #define buttonPlay 40
 #define buttonPrev 41
 #define buttonNext 42
 #define DacRegister DDRA
 #define DacPort PORTA
+#else if defined(__AVR_ATmega328__)
+#define buttonPlay A1
+#define buttonPrev A2
+#define buttonNext A0
+#define DacRegister DDRD
+#define DacPort PORTD
+#endif
 #define SDPath "/AUDIO/"
 
 #define sampleRate 44100
@@ -30,10 +37,10 @@
 //Library variables
 void onPush(byte pin);
 Buttons buttons(onPush);
-Directory * dir;
+File dir;
 #define audioInterrupt TIMER2_COMPA_vect
 
-void loadFile(file * f);
+void loadFile(File f);
 
 //Setup function
 void setup() {
@@ -44,8 +51,8 @@ void setup() {
 
 	//SDCARD
 	SD.begin();
-	dir = new Directory(SDPath);
-	loadFile(dir->getFiles());
+	dir = SD.open(SDPath);
+	loadFile(dir.openNextFile());
 
 	//DAC
 	DacRegister = 0xFF;
@@ -59,9 +66,6 @@ void setup() {
 	OCR2A = (F_CPU / ((long) sampleRate * 8)) - 1; //set compare match register for 16khz increments
 	TIMSK2 |= (1 << OCIE2A); //enable timer compare interrupt
 	sei(); //allow interrupts
-
-	//DEBUG
-	//Serial.begin(115200);
 }
 
 #endif

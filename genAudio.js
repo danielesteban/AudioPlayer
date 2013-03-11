@@ -5,13 +5,17 @@ var fs = require('fs'),
 	sampleRate = 44100,
 	sampleBits = 8,
 	soxEffects = ['vol', '0.9'],
-	wav2cBinary = '../../Downloads/wav2c/wav2c';
+	wav2cBinary = '../../Downloads/wav2c/wav2c',
+	fileCount = (fs.existsSync('./raw') ? fs.readdirSync('./raw/').length : 0) + 1;
 
 function genAudio() {
 	if(!mp3s.length) return console.log("Done!");
 	f = mp3s.shift();
 	if(f.substr(f.lastIndexOf('.') + 1) == 'mp3') {
-		var fn = f.substr(0, f.length - 4),
+		!fs.existsSync('./wav') && fs.mkdirSync('./wav', '0755');
+		var fn = fileCount + '';
+		while(fn.length < 4) fn = '0' + fn; 
+		var //fn = f.substr(0, f.length - 4),
 			mpg123 = require('child_process').spawn('mpg123', [
 				'-w./wav/' + fn + '.wav',
 				'./mp3/' + f
@@ -45,9 +49,11 @@ function genAudio() {
 					w = w.substr(w.indexOf("={") + 2);
 					w = w.substr(0, w.indexOf(", }"));
 					w = eval("new Buffer([" + w + "])");
+					!fs.existsSync('./raw') && fs.mkdirSync('./raw', '0755');
 					fs.writeFileSync('./raw/' + fn + '.raw', w);
 					fs.unlinkSync('./wav/' + fn + '.h');
-					console.log(fn);
+					console.log(f);
+					fileCount++;
 					genAudio();
 				});
 
@@ -62,7 +68,8 @@ function genAudio() {
 		});
 
 		mpg123.stderr.on('data', function (data) {
-			console.log('mpg123 stderr: ' + data);
+			//Commented out.. too verbose.
+			//console.log('mpg123 stderr: ' + data);
 		});
 	} else genAudio();
 }
