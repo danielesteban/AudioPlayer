@@ -45,6 +45,8 @@ void loadFile(File f, int index);
 
 //Setup function
 void setup() {
+	randomSeed(analogRead(A5));
+
 	//BUTTONS
 	buttons.setup(buttonPlay);
 	buttons.setup(buttonPrev);

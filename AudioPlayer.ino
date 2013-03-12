@@ -87,6 +87,26 @@ void next() {
     loadFile(next, currentIndex + 1);
 }
 
+void shuffle() {
+    int c = 0,
+        jump = random(20, 80),
+        index = currentIndex;
+
+    File f = currentFile;
+    while(c < jump) {
+        c++;
+        index++;
+        f.close();
+        f = dir.openNextFile();
+        if(!f) {
+            dir.rewindDirectory();
+            f = dir.openNextFile();
+            index = 0;
+        }
+    }
+    loadFile(f, index);
+}
+
 void onPush(byte pin) {
     switch(pin) {
         case buttonPlay:
@@ -96,7 +116,8 @@ void onPush(byte pin) {
             prev();
         break;
         case buttonNext:
-            next();
+            if(buttons.get(buttonPrev)->status == LOW) shuffle();
+            else next();
     }
 }
 
