@@ -2,10 +2,9 @@
 
 var fs = require('fs'),
 	mp3s = fs.readdirSync('./mp3')
-	sampleRate = 44100,
-	sampleBits = 8,
-	soxEffects = ['vol', '0.9'],
-	wav2cBinary = '../../Downloads/wav2c/wav2c',
+	sampleRate = 32000,
+	sampleBits = 16,
+	soxEffects = [],
 	fileCount = (fs.existsSync('./raw') ? fs.readdirSync('./raw/').length : 0) + 1;
 
 function genAudio() {
@@ -27,16 +26,17 @@ function genAudio() {
 					'./wav/' + fn + '.wav',
 					'-c1',
 					'-r' + sampleRate,
-					'-eunsigned-integer',
+					'-esigned-integer',
 					'-b' + sampleBits,
 					'./wav/' + sampleRate + '-' + fn + '.wav'
 				].concat(soxEffects));
 
 			sox.on('exit', function (code) {
 				if(code !== 0) return;
-				var wav2c = require('child_process').spawn(wav2cBinary, [
+				!fs.existsSync('./raw') && fs.mkdirSync('./raw', '0755');
+				var wav2c = require('child_process').spawn('./genAudio', [
 					'./wav/' + sampleRate + '-' + fn + '.wav',
-					'./wav/' + fn + '.h',
+					'./raw/' + fn + '.raw',
 					fn
 				]);
 
@@ -44,14 +44,6 @@ function genAudio() {
 					fs.unlinkSync('./wav/' + sampleRate + '-' + fn + '.wav');
 					fs.unlinkSync('./wav/' + fn + '.wav');
 					if(code !== 0) return;
-
-					var w = fs.readFileSync('./wav/' + fn + '.h', 'utf8');
-					w = w.substr(w.indexOf("={") + 2);
-					w = w.substr(0, w.indexOf(", }"));
-					w = eval("new Buffer([" + w + "])");
-					!fs.existsSync('./raw') && fs.mkdirSync('./raw', '0755');
-					fs.writeFileSync('./raw/' + fn + '.raw', w);
-					fs.unlinkSync('./wav/' + fn + '.h');
 					console.log(f);
 					fileCount++;
 					genAudio();

@@ -3,36 +3,102 @@
     ==============================================
     Created by Daniel Esteban, March 10, 2013.
 
-    Edit Setup.h for Port/Pin Numbers & other configurations...
+    Edit Config.h for Port/Pin Numbers & other configurations...
 */
 
-/*
-//Uncomment this ones to compile with the Arduino IDE
 #include <EEPROM.h>
 #include <SD.h>
-#include <Buttons.h>
-*/
-#include "Setup.h"
+#include "Config.h"
 
-bool playing = 0;
+#define audioInterrupt TIMER1_COMPA_vect
 
-File currentFile;
-int currentIndex = 0;
-long fileSize;
-
-#if defined(__AVR_ATmega2560__)
-#define NumBuffers 4
-#define BufferSize 1024
-#else if defined(__AVR_ATmega328__)
-#define NumBuffers 2
-#define BufferSize 256
-#endif
 byte currentBuffer;
 int currentBufferIndex;
 uint8_t buffers[NumBuffers][BufferSize];
 bool bufferStatus[NumBuffers];
 
-void next();
+File root;
+File currentFile;
+File currentDir;
+int currentDirIndex;
+long fileSize = 0;
+
+void setup() {
+    //SDCARD
+    SD.begin();
+    root = SD.open(SDPath);
+
+    currentDir = root.openNextFile();
+    
+    currentDirIndex = (int) EEPROM.read(0) + ((int) EEPROM.read(1) << 8);
+    currentDirIndex == 32767 && (currentDirIndex = 0);
+
+    randomSeed(currentDirIndex + micros());
+
+    int skip = currentDirIndex + random(1, 6);
+
+    while(skip > 0) {
+        skip--;
+        currentDirIndex++;
+        do {
+            currentDir.close();
+            currentDir = root.openNextFile();
+            if(!currentDir) {
+                root.rewindDirectory();
+                currentDir = root.openNextFile();
+                currentDirIndex = 0;
+            }
+        } while(!currentDir.isDirectory());
+    }
+    EEPROM.write(0, lowByte(currentDirIndex));
+    EEPROM.write(1, highByte(currentDirIndex));
+
+    //DAC
+    DacRegisterL = 0xFF;
+    for(byte x=0; x<DacBitH2; x++) DacRegisterH1 |= (1 << x);
+    DacRegisterH2 = 0x3F;
+    
+    //AUDIO TIMER
+    cli(); //stop interrupts
+    TCCR1A = 0;
+    TCCR1B = 0;
+    TCNT1 = 0;
+    TCCR1B |= (1 << WGM12); //turn on CTC mode
+    TCCR1B |= (1 << CS10); //Set CS10 bit for no prescaler
+    OCR1A = (F_CPU / sampleRate) - 1; //set compare match register for 32khz increments
+    TIMSK1 |= (1 << OCIE1A); //enable timer compare interrupt
+    sei(); //allow interrupts
+}
+
+inline void next() {
+    if(currentFile) currentFile.close();
+    currentFile = currentDir.openNextFile();
+    if(!currentFile) {
+        currentDirIndex++;
+        do {
+            currentDir.close();
+            currentDir = root.openNextFile();
+            if(!currentDir) {
+                root.rewindDirectory();
+                currentDir = root.openNextFile();
+                currentDirIndex = 0;
+            }
+        } while(!currentDir.isDirectory());
+
+        currentFile = currentDir.openNextFile();
+        EEPROM.write(0, lowByte(currentDirIndex));
+        EEPROM.write(1, highByte(currentDirIndex));
+    }
+    fileSize = currentFile.size();
+    for(byte x=0; x<NumBuffers; x++) {
+        bufferStatus[x] = 0;
+        for(int y=0; y<BufferSize; y+=2) {
+            buffers[x][y] = 255;
+            buffers[x][y + 1] = 127;
+        }
+    }
+    currentBuffer = currentBufferIndex = 0;
+}
 
 void loop() {
     //BUFFERING
@@ -45,87 +111,19 @@ void loop() {
         bufferStatus[x] = 1;
         break;
     }
-
-    buttons.read();
-}
-
-void loadFile(File f, int i) {
-    currentFile = f;
-    currentIndex = i;
-    fileSize = f.size();
-    for(byte x=0; x<NumBuffers; x++) {
-        bufferStatus[x] = 0;
-        for(int y=0; y<BufferSize; y++) buffers[x][y] = 127;
-    }
-    currentBuffer = currentBufferIndex = 0;
-    EEPROM.write(0, lowByte(i));
-    EEPROM.write(1, highByte(i));
-}
-
-void prev() {
-    int c = 0;
-    File f,
-        prev = currentFile;
-
-    dir.rewindDirectory();
-    while(f = dir.openNextFile()) {
-        prev.close();
-        prev = f;
-        c++;
-        if(c == currentIndex) break;
-    }
-    loadFile(prev, c - 1);
-}
-
-void next() {
-    if(currentFile) currentFile.close();
-    File next = dir.openNextFile();
-    if(!next) {
-        dir.rewindDirectory();
-        return loadFile(dir.openNextFile(), 0);
-    }
-    loadFile(next, currentIndex + 1);
-}
-
-void shuffle() {
-    int c = 0,
-        jump = random(20, 80),
-        index = currentIndex;
-
-    File f = currentFile;
-    while(c < jump) {
-        c++;
-        index++;
-        f.close();
-        f = dir.openNextFile();
-        if(!f) {
-            dir.rewindDirectory();
-            f = dir.openNextFile();
-            index = 0;
-        }
-    }
-    loadFile(f, index);
-}
-
-void onPush(byte pin) {
-    switch(pin) {
-        case buttonPlay:
-            playing = !playing;
-        break;
-        case buttonPrev:
-            prev();
-        break;
-        case buttonNext:
-            if(buttons.get(buttonPrev)->status == LOW) shuffle();
-            else next();
-    }
 }
 
 ISR(audioInterrupt) {
     //PLAYBACK
-    if(!playing || !bufferStatus[currentBuffer]) return;
-    DacPort = buffers[currentBuffer][currentBufferIndex];
-    currentBufferIndex++;
+    if(!bufferStatus[currentBuffer]) return;
+    DacPortL = buffers[currentBuffer][currentBufferIndex];
+    const byte hb = buffers[currentBuffer][currentBufferIndex + 1];
+    for(byte x=0; x<DacBitH2; x++) {
+        if(hb & (1 << x)) DacPortH1 |= (1 << x);
+        else DacPortH1 &= ~(1 << x);
+    }
+    DacPortH2 = hb >> DacBitH2;
+    currentBufferIndex += 2;
     if(currentBufferIndex == BufferSize) {
         bufferStatus[currentBuffer] = currentBufferIndex = 0;
         currentBuffer++;
