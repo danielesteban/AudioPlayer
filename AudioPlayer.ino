@@ -24,9 +24,7 @@ File currentDir;
 int currentDirIndex;
 long fileSize = 0;
 
-bool nextFlagWritten = 0;
-
-inline void next() {
+inline void next(bool eeprom = true) {
     if(currentFile) currentFile.close();
     currentFile = currentDir.openNextFile();
     currentFileIndex++;
@@ -56,6 +54,7 @@ inline void next() {
         }
     }
     currentBuffer = currentBufferIndex = 0;
+    if(!eeprom) return;
     EEPROM.write(2, lowByte(currentFileIndex));
     EEPROM.write(3, highByte(currentFileIndex));
 }
@@ -72,7 +71,7 @@ void setup() {
 
     currentFileIndex = ((int) EEPROM.read(2) + ((int) EEPROM.read(3) << 8)) + 1;
 
-    randomSeed(currentDirIndex + micros());
+    randomSeed(currentDirIndex + currentFileIndex + micros());
 
     int skip = currentDirIndex + (currentFileIndex == 0 ? random(1, 6) : 0);
     currentDirIndex = 0;
@@ -95,12 +94,16 @@ void setup() {
     skip = currentFileIndex;
     currentFileIndex = -1;
     if(skip > 0) {
-        while(skip >= 0) {
-            next();
-            skip--;
-        }
         EEPROM.write(2, 255);
         EEPROM.write(3, 255);
+        
+        delay(250); //Reset: one tap == next , double tap == random dir
+        while(skip >= 0) {
+            next(false);
+            skip--;
+        }
+        EEPROM.write(2, lowByte(currentFileIndex));
+        EEPROM.write(3, highByte(currentFileIndex));
     }
 
     //DAC
@@ -120,7 +123,7 @@ void setup() {
     sei(); //allow interrupts
 }
 
-void loop() {
+void loop(void) {
     //BUFFERING
     for(byte x=0; x<NumBuffers; x++) {
         if(fileSize == 0) next();
@@ -130,12 +133,6 @@ void loop() {
         fileSize -= buffSize;
         bufferStatus[x] = 1;
         break;
-    }
-
-    if(!nextFlagWritten && millis() > 1000) {
-        nextFlagWritten = 1;
-        EEPROM.write(2, lowByte(currentFileIndex));
-        EEPROM.write(3, highByte(currentFileIndex));
     }
 }
 

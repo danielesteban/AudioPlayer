@@ -159,13 +159,13 @@ int main(int argc, char **argv) {
 	int length = (s->dataLength / s->numChannels / s->bitsPerSample * 8),
 		i;
 	
-	short signedData;
-	unsigned short data;
+	short int signedData;
+	unsigned short int data;
 
 	for(i=0; i<length; i++) {
-		fread(&signedData, sizeof(short), 1, fin);
+		fread(&signedData, sizeof(short int), 1, fin);
 		data = signedData + 32767;
-		fwrite(&data, 1, sizeof(unsigned short), fout);
+		fwrite(&data, 1, sizeof(unsigned short int), fout);
 	}
 
 	fclose(fout);
