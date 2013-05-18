@@ -19,9 +19,46 @@ bool bufferStatus[NumBuffers];
 
 File root;
 File currentFile;
+int currentFileIndex;
 File currentDir;
 int currentDirIndex;
 long fileSize = 0;
+
+bool nextFlagWritten = 0;
+
+inline void next() {
+    if(currentFile) currentFile.close();
+    currentFile = currentDir.openNextFile();
+    currentFileIndex++;
+    if(!currentFile) {
+        currentDirIndex++;
+        do {
+            currentDir.close();
+            currentDir = root.openNextFile();
+            if(!currentDir) {
+                root.rewindDirectory();
+                currentDir = root.openNextFile();
+                currentDirIndex = 0;
+            }
+        } while(!currentDir.isDirectory());
+
+        currentFile = currentDir.openNextFile();
+        currentFileIndex = 0;
+        EEPROM.write(0, lowByte(currentDirIndex));
+        EEPROM.write(1, highByte(currentDirIndex));
+    }
+    fileSize = currentFile.size();
+    for(byte x=0; x<NumBuffers; x++) {
+        bufferStatus[x] = 0;
+        for(int y=0; y<BufferSize; y+=2) {
+            buffers[x][y] = 255;
+            buffers[x][y + 1] = 127;
+        }
+    }
+    currentBuffer = currentBufferIndex = 0;
+    EEPROM.write(2, lowByte(currentFileIndex));
+    EEPROM.write(3, highByte(currentFileIndex));
+}
 
 void setup() {
     //SDCARD
@@ -33,10 +70,12 @@ void setup() {
     currentDirIndex = (int) EEPROM.read(0) + ((int) EEPROM.read(1) << 8);
     currentDirIndex == 32767 && (currentDirIndex = 0);
 
+    currentFileIndex = ((int) EEPROM.read(2) + ((int) EEPROM.read(3) << 8)) + 1;
+
     randomSeed(currentDirIndex + micros());
 
-    int skip = currentDirIndex + random(1, 6);
-
+    int skip = currentDirIndex + (currentFileIndex == 0 ? random(1, 6) : 0);
+    currentDirIndex = 0;
     while(skip > 0) {
         skip--;
         currentDirIndex++;
@@ -52,6 +91,17 @@ void setup() {
     }
     EEPROM.write(0, lowByte(currentDirIndex));
     EEPROM.write(1, highByte(currentDirIndex));
+
+    skip = currentFileIndex;
+    currentFileIndex = -1;
+    if(skip > 0) {
+        while(skip >= 0) {
+            next();
+            skip--;
+        }
+        EEPROM.write(2, 255);
+        EEPROM.write(3, 255);
+    }
 
     //DAC
     DacRegisterL = 0xFF;
@@ -70,36 +120,6 @@ void setup() {
     sei(); //allow interrupts
 }
 
-inline void next() {
-    if(currentFile) currentFile.close();
-    currentFile = currentDir.openNextFile();
-    if(!currentFile) {
-        currentDirIndex++;
-        do {
-            currentDir.close();
-            currentDir = root.openNextFile();
-            if(!currentDir) {
-                root.rewindDirectory();
-                currentDir = root.openNextFile();
-                currentDirIndex = 0;
-            }
-        } while(!currentDir.isDirectory());
-
-        currentFile = currentDir.openNextFile();
-        EEPROM.write(0, lowByte(currentDirIndex));
-        EEPROM.write(1, highByte(currentDirIndex));
-    }
-    fileSize = currentFile.size();
-    for(byte x=0; x<NumBuffers; x++) {
-        bufferStatus[x] = 0;
-        for(int y=0; y<BufferSize; y+=2) {
-            buffers[x][y] = 255;
-            buffers[x][y + 1] = 127;
-        }
-    }
-    currentBuffer = currentBufferIndex = 0;
-}
-
 void loop() {
     //BUFFERING
     for(byte x=0; x<NumBuffers; x++) {
@@ -110,6 +130,12 @@ void loop() {
         fileSize -= buffSize;
         bufferStatus[x] = 1;
         break;
+    }
+
+    if(!nextFlagWritten && millis() > 1000) {
+        nextFlagWritten = 1;
+        EEPROM.write(2, lowByte(currentFileIndex));
+        EEPROM.write(3, highByte(currentFileIndex));
     }
 }
 
