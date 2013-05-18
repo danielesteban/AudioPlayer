@@ -18,6 +18,6 @@
 #define DacPortH2 PORTC
 
 #define NumBuffers 2
-#define BufferSize 258
+#define BufferSize 260
 
 #endif

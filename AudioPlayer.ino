@@ -21,7 +21,7 @@ File root;
 File currentFile;
 int currentFileIndex;
 File currentDir;
-int currentDirIndex;
+int currentDirIndex = 0;
 long fileSize = 0;
 
 inline void next(bool eeprom = true) {
@@ -60,21 +60,20 @@ inline void next(bool eeprom = true) {
 }
 
 void setup() {
+    //EEPROM
+    currentFileIndex = ((int) EEPROM.read(2) + ((int) EEPROM.read(3) << 8)) + 1;
+    if(currentFileIndex > 0) {
+        EEPROM.write(2, 255);
+        EEPROM.write(3, 255);
+    }
+
+    int skip = ((int) EEPROM.read(0) + ((int) EEPROM.read(1) << 8)) + (currentFileIndex > 0 ? 0 : 1);
+    
     //SDCARD
     SD.begin();
     root = SD.open(SDPath);
 
     currentDir = root.openNextFile();
-    
-    currentDirIndex = (int) EEPROM.read(0) + ((int) EEPROM.read(1) << 8);
-    currentDirIndex == 32767 && (currentDirIndex = 0);
-
-    currentFileIndex = ((int) EEPROM.read(2) + ((int) EEPROM.read(3) << 8)) + 1;
-
-    randomSeed(currentDirIndex + currentFileIndex + micros());
-
-    int skip = currentDirIndex + (currentFileIndex == 0 ? random(1, 6) : 0);
-    currentDirIndex = 0;
     while(skip > 0) {
         skip--;
         currentDirIndex++;
@@ -88,22 +87,20 @@ void setup() {
             }
         } while(!currentDir.isDirectory());
     }
-    EEPROM.write(0, lowByte(currentDirIndex));
-    EEPROM.write(1, highByte(currentDirIndex));
 
     skip = currentFileIndex;
     currentFileIndex = -1;
     if(skip > 0) {
-        EEPROM.write(2, 255);
-        EEPROM.write(3, 255);
-        
-        delay(250); //Reset: one tap == next , double tap == random dir
         while(skip >= 0) {
             next(false);
             skip--;
         }
+        delay(250); //Reset: one tap == next song | double tap == next dir
         EEPROM.write(2, lowByte(currentFileIndex));
         EEPROM.write(3, highByte(currentFileIndex));
+    } else {
+        EEPROM.write(0, lowByte(currentDirIndex));
+        EEPROM.write(1, highByte(currentDirIndex));
     }
 
     //DAC
